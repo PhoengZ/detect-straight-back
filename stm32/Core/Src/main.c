@@ -50,9 +50,10 @@ uint32_t pMillis;
 uint32_t val1 = 0;
 uint32_t val2 = 0;
 uint16_t distance = 0;
-char uartBuf[50]; // ตัวแปรเก็บข้อความส่งเข้าคอม
+char uartBuf[50];
 uint8_t rxByte;
 volatile uint8_t isAlarmOn = 0;
+uint8_t lastBtnState = 1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -112,51 +113,47 @@ int main(void)
   while (1)
   {
 	  if (isAlarmOn == 1) {
-	 	  		  beep(100);      // ร้อง 0.1 วินาที
-	 	  		  // HAL_Delay(50); // เว้นจังหวะนิดนึง (ถ้าต้องการ)
-	 	  } else {
-	 		  // ถ้านั่งตรง ให้เงียบ
-	 		  HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_RESET);
-	 	  }
-	 	  /* USER CODE END WHILE */
-	   // --- 1. ส่วนของ Ultrasonic (Code เดิม) ---
-	 	  // ส่งสัญญาณ Trigger (High 10us)
-	 	  HAL_GPIO_WritePin(TRIG_GPIO_Port, TRIG_Pin, GPIO_PIN_RESET);
-	 	  delay_us(3);
-	 	  HAL_GPIO_WritePin(TRIG_GPIO_Port, TRIG_Pin, GPIO_PIN_SET);
-	 	  delay_us(10);
-	 	  HAL_GPIO_WritePin(TRIG_GPIO_Port, TRIG_Pin, GPIO_PIN_RESET);
+		  beep(100);
+	  } else {
+		  // ถ้านั่งตรง ให้เงียบ
+		  HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_RESET);
+	  }
+	  // send Trigger (High 10us)
+	  HAL_GPIO_WritePin(TRIG_GPIO_Port, TRIG_Pin, GPIO_PIN_RESET);
+	  delay_us(3);
+	  HAL_GPIO_WritePin(TRIG_GPIO_Port, TRIG_Pin, GPIO_PIN_SET);
+	  delay_us(10);
+	  HAL_GPIO_WritePin(TRIG_GPIO_Port, TRIG_Pin, GPIO_PIN_RESET);
 
-	 	  // รอสัญญาณ Echo (ควรระวัง Infinite Loop ถ้านานเกินไป แต่ใช้แบบเดิมไปก่อนได้ครับ)
-	 	  while (HAL_GPIO_ReadPin(ECHO_GPIO_Port, ECHO_Pin) == GPIO_PIN_RESET);
-	 	  val1 = __HAL_TIM_GET_COUNTER(&htim1);
+	  // wait for echo
+	  while (HAL_GPIO_ReadPin(ECHO_GPIO_Port, ECHO_Pin) == GPIO_PIN_RESET);
+	  val1 = __HAL_TIM_GET_COUNTER(&htim1);
 
-	 	  while (HAL_GPIO_ReadPin(ECHO_GPIO_Port, ECHO_Pin) == GPIO_PIN_SET);
-	 	  val2 = __HAL_TIM_GET_COUNTER(&htim1);
+	  while (HAL_GPIO_ReadPin(ECHO_GPIO_Port, ECHO_Pin) == GPIO_PIN_SET);
+	  val2 = __HAL_TIM_GET_COUNTER(&htim1);
 
-	 	  distance = (val2 - val1) * 0.034 / 2;
+	  distance = (val2 - val1) * 0.034 / 2;
 
-	 	  // --- 2. ส่วนอ่านค่าปุ่มกด (Button) ---
-	 	  // อ่านค่าจากขา BUTTON_Pin (0 หรือ 1)
-	 	  // ถ้า Module เป็น Active Low (กดแล้วเป็น 0) อาจจะต้องกลับค่า หรือส่งไปดื้อๆ แล้วไปแก้ Logic ที่ Colab
-	 	  int btnState = HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin);
+	  // read button pin
+	  int btnState = HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin);
+	 //noti when reset
+	  if (btnState == 0 && lastBtnState == 1)
+	  {
+		  beep(80);
+		  HAL_Delay(100);
+		  beep(80);
+	  }
 
-	 	  // --- 3. แพ็คข้อมูลและส่งออก UART1 (ไปหา ESP32) ---
-	 	  // ใช้ format JSON: {"d": distance, "b": button_state}
-	 	  // การใช้ JSON จะทำให้ฝั่ง Colab/NETPIE แยกข้อมูลง่ายครับ
+	  lastBtnState = btnState;
 
-	 	  memset(uartBuf, 0, sizeof(uartBuf)); // เคลียร์ Buffer ก่อน
-	 //	  	      sprintf(uartBuf, "{\"d\":%d,\"b\":%d}\n", distance, btnState);
-	 	  sprintf(uartBuf, "{\"d\":%d,\"b\":%d}\r\n", distance, btnState);
+	  memset(uartBuf, 0, sizeof(uartBuf)); // เคลียร์ Buffer ก่อน
+	  sprintf(uartBuf, "{\"d\":%d,\"b\":%d}\r\n", distance, btnState);
 
-	 	  // ส่งออก UART1 (ไป ESP32)
-	 	  HAL_UART_Transmit(&huart1, (uint8_t*)uartBuf, strlen(uartBuf), 100);
+	  HAL_UART_Transmit(&huart1, (uint8_t*)uartBuf, strlen(uartBuf), 100); //to esp 32
+	  HAL_UART_Transmit(&huart2, (uint8_t*)uartBuf, strlen(uartBuf), 100); // to debug putty
 
-	 	  // ส่งออก UART2 (เข้าคอมพิวเตอร์เพื่อ Debug ดูค่า)
-	 	  HAL_UART_Transmit(&huart2, (uint8_t*)uartBuf, strlen(uartBuf), 100);
-
-	 	  // หน่วงเวลา (ปรับตามความเหมาะสม ไม่ควรเร็วกว่า 60ms สำหรับ HC-SR04)
-	 	  HAL_Delay(500);
+	  // หน่วงเวลา (ปรับตามความเหมาะสม ไม่ควรเร็วกว่า 60ms สำหรับ HC-SR04)
+	  HAL_Delay(500);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -420,7 +417,6 @@ void beep(uint16_t duration_ms) {
         HAL_GPIO_TogglePin(BUZZER_GPIO_Port, BUZZER_Pin);
         delay_us(250); // 250us On + 250us Off = 500us (2kHz) -> เสียงจะแหลมดัง
     }
-    // จบแล้วปิดเสียงให้สนิท
     HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_RESET);
 }
 /* USER CODE END 4 */
