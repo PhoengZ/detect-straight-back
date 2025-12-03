@@ -137,13 +137,19 @@ int main(void)
 	  // read button pin
 	  int btnState = HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin);
 	 //noti when reset
+	  // เช็คจังหวะ "เริ่มกด" (เปลี่ยนจาก 1 เป็น 0)
 	  if (btnState == 0 && lastBtnState == 1)
 	  {
-		  beep(80);
-		  HAL_Delay(100);
-		  beep(80);
+		// Step 1: นับถอยหลัง 3 วินาที (ติ๊ด...ติ๊ด...ติ๊ด...)
+		for(int i=0; i<3; i++) {
+		beep(200);      // ติ๊ด (ยาวหน่อย 200ms)
+		HAL_Delay(800); // เว้นวรรค (รวมกับเสียงจะเป็น 1 วินาทีพอดี)
+	 }
+	// Step 2: เสียงยืนยัน Reset (ติ๊ด-ติ๊ด)
+	  beep(100);       // ติ๊ดที่ 1 (สั้นๆ)
+	  HAL_Delay(100);  // เว้นวรรคเร็วๆ
+	  beep(100);       // ติ๊ดที่ 2
 	  }
-
 	  lastBtnState = btnState;
 
 	  memset(uartBuf, 0, sizeof(uartBuf)); // เคลียร์ Buffer ก่อน
